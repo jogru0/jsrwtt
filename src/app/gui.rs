@@ -1,20 +1,65 @@
-use std::{f32::consts::PI, iter, sync::Arc, time::Instant};
+use std::{f32::consts::PI, iter, mem::take, sync::Arc, time::Instant};
 
+use camera::CameraUniform;
 use cgmath::Rotation3;
+use instance::{Instance, InstanceRaw};
+use light_uniform::LightUniform;
+use log::info;
+use model::{DrawLight, DrawModel, Vertex};
 use wgpu::util::DeviceExt;
 use winit::{
     event::{ElementState, KeyEvent, MouseButton, WindowEvent},
+    event_loop::ActiveEventLoop,
     keyboard::PhysicalKey,
     window::Window,
 };
 
-use crate::{
-    camera, create_render_pipeline, hdr,
-    model::{self, DrawLight, DrawModel, Vertex},
-    resources, texture, CameraUniform, Instance, InstanceRaw, LightUniform, NUM_INSTANCES_PER_ROW,
-};
+const NUM_INSTANCES_PER_ROW: u32 = 10;
 
-pub(super) struct State {
+mod camera;
+mod hdr;
+mod instance;
+mod model;
+mod resources;
+mod texture;
+
+#[cfg(feature = "debug")]
+mod debug;
+
+pub(super) struct GuiConfig {
+    pub(super) title: String,
+}
+
+pub(super) enum MaybeGui {
+    Unitialized(GuiConfig),
+    Initialized(Gui),
+}
+
+impl MaybeGui {
+    pub(super) async fn get_or_initialize(&mut self, event_loop: &ActiveEventLoop) -> &mut Gui {
+        match self {
+            MaybeGui::Unitialized(GuiConfig { title }) => {
+                info!("creating gui for '{title}'");
+                let window = event_loop
+                    .create_window(Window::default_attributes().with_title(take(title)))
+                    .unwrap();
+
+                let gui = Gui::new(window).await.unwrap();
+                *self = MaybeGui::Initialized(gui);
+                let MaybeGui::Initialized(gui) = self else {
+                    unreachable!()
+                };
+                info!("created gui for '{}'", gui.window().title());
+                gui
+            }
+            MaybeGui::Initialized(state) => state,
+        }
+    }
+}
+
+mod light_uniform;
+
+pub(super) struct Gui {
     window_arc: Arc<Window>,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -48,7 +93,7 @@ pub(super) struct State {
     last_render_time: Instant,
 }
 
-impl State {
+impl Gui {
     pub(super) async fn new(window: Window) -> anyhow::Result<Self> {
         let window_arc = Arc::new(window);
 
@@ -391,8 +436,8 @@ impl State {
         };
 
         let debug_material = {
-            let diffuse_bytes = include_bytes!("../res/cobble-diffuse.png");
-            let normal_bytes = include_bytes!("../res/cobble-normal.png");
+            let diffuse_bytes = include_bytes!("../../res/cobble-diffuse.png");
+            let normal_bytes = include_bytes!("../../res/cobble-normal.png");
 
             let diffuse_texture = texture::Texture::from_bytes(
                 &device,
@@ -623,4 +668,67 @@ impl State {
 
         Ok(())
     }
+}
+
+fn create_render_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    color_format: wgpu::TextureFormat,
+    depth_format: Option<wgpu::TextureFormat>,
+    vertex_layouts: &[wgpu::VertexBufferLayout],
+    topology: wgpu::PrimitiveTopology, // NEW!
+    shader: wgpu::ShaderModuleDescriptor,
+) -> wgpu::RenderPipeline {
+    info!("create render pipeline");
+
+    let shader = device.create_shader_module(shader);
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(&format!("{:?}", shader)),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: "vs_main",
+            buffers: vertex_layouts,
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: "fs_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: color_format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology, // NEW!
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: Some(wgpu::Face::Back),
+            // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+            polygon_mode: wgpu::PolygonMode::Fill,
+            // Requires Features::DEPTH_CLIP_CONTROL
+            unclipped_depth: false,
+            // Requires Features::CONSERVATIVE_RASTERIZATION
+            conservative: false,
+        },
+        depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
+            format,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::LessEqual, // UDPATED!
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        // If the pipeline will be used with a multiview render pass, this
+        // indicates how many array layers the attachments will have.
+        multiview: None,
+        cache: None,
+    })
 }

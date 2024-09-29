@@ -4,19 +4,10 @@ use cfg_if::cfg_if;
 use image::codecs::hdr::HdrDecoder;
 use wgpu::util::DeviceExt;
 
-use crate::{model, texture};
-
-#[cfg(target_arch = "wasm32")]
-fn format_url(file_name: &str) -> reqwest::Url {
-    let window = web_sys::window().unwrap();
-    let location = window.location();
-    let mut origin = location.origin().unwrap();
-    if !origin.ends_with("learn-wgpu") {
-        origin = format!("{}/learn-wgpu", origin);
-    }
-    let base = reqwest::Url::parse(&format!("{}/", origin,)).unwrap();
-    base.join(file_name).unwrap()
-}
+use super::{
+    model::{self, Model},
+    texture::{self, Texture},
+};
 
 pub async fn load_string(file_name: &str) -> anyhow::Result<String> {
     cfg_if! {
@@ -62,9 +53,9 @@ pub async fn load_texture(
     is_normal_map: bool,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-) -> anyhow::Result<texture::Texture> {
+) -> anyhow::Result<Texture> {
     let data = load_binary(file_name).await?;
-    texture::Texture::from_bytes(device, queue, &data, file_name, is_normal_map)
+    Texture::from_bytes(device, queue, &data, file_name, is_normal_map)
 }
 
 pub async fn load_model(
@@ -72,7 +63,7 @@ pub async fn load_model(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     layout: &wgpu::BindGroupLayout,
-) -> anyhow::Result<model::Model> {
+) -> anyhow::Result<Model> {
     let obj_text = load_string(file_name).await?;
     let obj_cursor = Cursor::new(obj_text);
     let mut obj_reader = BufReader::new(obj_cursor);
@@ -216,7 +207,7 @@ pub async fn load_model(
         })
         .collect::<Vec<_>>();
 
-    Ok(model::Model { meshes, materials })
+    Ok(Model { meshes, materials })
 }
 
 pub struct HdrLoader {
@@ -311,7 +302,7 @@ impl HdrLoader {
             })
             .collect::<Vec<_>>();
 
-        let src = texture::Texture::create_2d_texture(
+        let src = Texture::create_2d_texture(
             device,
             meta.width,
             meta.height,

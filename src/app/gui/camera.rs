@@ -39,6 +39,40 @@ impl Camera {
     }
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub(super) struct CameraUniform {
+    view_position: [f32; 4],
+    view: [[f32; 4]; 4], // NEW!
+    view_proj: [[f32; 4]; 4],
+    inv_proj: [[f32; 4]; 4], // NEW!
+    inv_view: [[f32; 4]; 4], // NEW!
+}
+
+impl CameraUniform {
+    pub(super) fn new() -> Self {
+        Self {
+            view_position: [0.0; 4],
+            view: cgmath::Matrix4::identity().into(), // NEW!
+            view_proj: cgmath::Matrix4::identity().into(),
+            inv_proj: cgmath::Matrix4::identity().into(), // NEW!
+            inv_view: cgmath::Matrix4::identity().into(), // NEW!
+        }
+    }
+
+    // UPDATED!
+    pub(super) fn update_view_proj(&mut self, camera: &Camera, projection: &Projection) {
+        self.view_position = camera.position.to_homogeneous().into();
+        let proj = projection.calc_matrix();
+        let view = camera.calc_matrix();
+        let view_proj = proj * view;
+        self.view = view.into();
+        self.view_proj = view_proj.into();
+        self.inv_proj = proj.invert().unwrap().into();
+        self.inv_view = view.transpose().into();
+    }
+}
+
 pub struct Projection {
     aspect: f32,
     fovy: Rad<f32>,

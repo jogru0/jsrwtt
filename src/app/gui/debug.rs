@@ -2,7 +2,7 @@ use std::mem::size_of;
 
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 
-use crate::create_render_pipeline;
+use super::create_render_pipeline;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -11,7 +11,7 @@ pub struct PositionColor {
     color: [f32; 3],
 }
 
-const AXIS_COLORS: &'static [PositionColor] = &[
+const AXIS_COLORS: &[PositionColor] = &[
     // X
     PositionColor {
         position: [0.0, 0.0, 0.0],
