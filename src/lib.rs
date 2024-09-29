@@ -1,3 +1,5 @@
+use std::mem::take;
+
 use cgmath::prelude::*;
 use log::info;
 use pollster::FutureExt;
@@ -209,33 +211,66 @@ fn create_render_pipeline(
     })
 }
 
-struct StateApplication {
-    state: Option<State>,
+struct GuiConfig {
     title: String,
 }
 
+enum MaybeGui {
+    Unitialized(GuiConfig),
+    Initialized(State),
+}
+
+impl MaybeGui {
+    async fn get_or_initialize(&mut self, event_loop: &ActiveEventLoop) -> &mut State {
+        match self {
+            MaybeGui::Unitialized(GuiConfig { title }) => {
+                info!("creating gui for '{title}'");
+                let window = event_loop
+                    .create_window(Window::default_attributes().with_title(take(title)))
+                    .unwrap();
+
+                let gui = State::new(window).await.unwrap();
+                *self = MaybeGui::Initialized(gui);
+                let MaybeGui::Initialized(gui) = self else {
+                    unreachable!()
+                };
+                info!("created gui for '{}'", gui.window().title());
+                gui
+            }
+            MaybeGui::Initialized(state) => state,
+        }
+    }
+}
+
+struct StateApplication {
+    maybe_gui: MaybeGui,
+}
+
 impl StateApplication {
-    pub fn new(title: String) -> Self {
-        Self { state: None, title }
+    pub async fn gui(&mut self, event_loop: &ActiveEventLoop) -> &mut State {
+        self.maybe_gui.get_or_initialize(event_loop).await
+    }
+
+    pub fn new(gui_config: GuiConfig) -> Self {
+        Self {
+            maybe_gui: MaybeGui::Unitialized(gui_config),
+        }
     }
 }
 
 impl ApplicationHandler for StateApplication {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         info!("Application resumed.");
-        let window = event_loop
-            .create_window(Window::default_attributes().with_title(&self.title))
-            .unwrap();
-        self.state = Some(State::new(window).block_on().unwrap());
+        self.gui(event_loop).block_on();
     }
 
     fn device_event(
         &mut self,
-        _event_loop: &ActiveEventLoop,
+        event_loop: &ActiveEventLoop,
         _device_id: DeviceId,
         event: DeviceEvent,
     ) {
-        let state = self.state.as_mut().unwrap();
+        let state = self.gui(event_loop).block_on();
 
         if let DeviceEvent::MouseMotion { delta } = event {
             if state.mouse_pressed {
@@ -250,7 +285,7 @@ impl ApplicationHandler for StateApplication {
         window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        let state = self.state.as_mut().unwrap();
+        let state = self.gui(event_loop).block_on();
 
         if window_id != state.window().id() || state.input(&event) {
             return;
@@ -309,8 +344,10 @@ pub async fn run() {
 
     let event_loop = EventLoop::new().unwrap();
 
-    let title = "Jonathan's Sausage Roll With Time Travel".into();
+    let gui_config = GuiConfig {
+        title: "Jonathan's Sausage Roll With Time Travel".into(),
+    };
 
-    let mut window_state = StateApplication::new(title);
+    let mut window_state = StateApplication::new(gui_config);
     event_loop.run_app(&mut window_state).unwrap();
 }
