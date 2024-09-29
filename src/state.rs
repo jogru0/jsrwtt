@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, iter};
+use std::{f32::consts::PI, iter, sync::Arc};
 
 use cgmath::Rotation3;
 use wgpu::util::DeviceExt;
@@ -14,9 +14,9 @@ use crate::{
     resources, texture, CameraUniform, Instance, InstanceRaw, LightUniform, NUM_INSTANCES_PER_ROW,
 };
 
-pub(super) struct State<'a> {
-    window: &'a Window,
-    surface: wgpu::Surface<'a>,
+pub(super) struct State {
+    window_arc: Arc<Window>,
+    surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -40,7 +40,6 @@ pub(super) struct State<'a> {
     #[allow(dead_code)]
     debug_material: model::Material,
     pub(super) mouse_pressed: bool,
-    // NEW!
     hdr: hdr::HdrPipeline,
     environment_bind_group: wgpu::BindGroup,
     sky_pipeline: wgpu::RenderPipeline,
@@ -48,9 +47,11 @@ pub(super) struct State<'a> {
     debug: debug::Debug,
 }
 
-impl<'a> State<'a> {
-    pub(super) async fn new(window: &'a Window) -> anyhow::Result<State<'a>> {
-        let size = window.inner_size();
+impl State {
+    pub(super) async fn new(window: Window) -> anyhow::Result<Self> {
+        let window_arc = Arc::new(window);
+
+        let size = window_arc.inner_size();
 
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
@@ -63,7 +64,7 @@ impl<'a> State<'a> {
             ..Default::default()
         });
 
-        let surface = instance.create_surface(window).unwrap();
+        let surface = instance.create_surface(window_arc.clone()).unwrap();
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -422,7 +423,7 @@ impl<'a> State<'a> {
         let debug = debug::Debug::new(&device, &camera_bind_group_layout, surface_format);
 
         Ok(Self {
-            window,
+            window_arc,
             surface,
             device,
             queue,
@@ -457,7 +458,7 @@ impl<'a> State<'a> {
     }
 
     pub fn window(&self) -> &Window {
-        self.window
+        &self.window_arc
     }
 
     pub(super) fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
