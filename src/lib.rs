@@ -1,9 +1,12 @@
 use cgmath::prelude::*;
+use pollster::FutureExt;
 use state::State;
 use winit::{
+    application::ApplicationHandler,
     event::*,
-    event_loop::EventLoop,
+    event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
+    window::Window,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -205,6 +208,88 @@ fn create_render_pipeline(
     })
 }
 
+struct StateApplication {
+    state: Option<State>,
+    title: String,
+}
+
+impl StateApplication {
+    pub fn new(title: String) -> Self {
+        Self { state: None, title }
+    }
+}
+
+impl ApplicationHandler for StateApplication {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let window = event_loop
+            .create_window(Window::default_attributes().with_title(&self.title))
+            .unwrap();
+        self.state = Some(State::new(window).block_on().unwrap());
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
+        let state = self.state.as_mut().unwrap();
+
+        if let DeviceEvent::MouseMotion { delta } = event {
+            if state.mouse_pressed {
+                state.camera_controller.process_mouse(delta.0, delta.1)
+            }
+        }
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        window_id: winit::window::WindowId,
+        event: WindowEvent,
+    ) {
+        let state = self.state.as_mut().unwrap();
+
+        if window_id != state.window().id() || state.input(&event) {
+            return;
+        }
+
+        match event {
+            #[cfg(not(target_arch = "wasm32"))]
+            WindowEvent::CloseRequested
+            | WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        state: ElementState::Pressed,
+                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+                        ..
+                    },
+                ..
+            } => event_loop.exit(),
+            WindowEvent::Resized(physical_size) => {
+                state.resize(physical_size);
+            }
+            // UPDATED!
+            WindowEvent::RedrawRequested => {
+                state.window().request_redraw();
+                state.update(instant::Instant::now());
+                match state.render() {
+                    Ok(_) => {}
+                    // Reconfigure the surface if it's lost or outdated
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        state.resize(state.size)
+                    }
+                    // The system is out of memory, we should probably quit
+                    Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
+                    // We're ignoring timeouts
+                    Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
     cfg_if::cfg_if! {
@@ -217,11 +302,8 @@ pub async fn run() {
     }
 
     let event_loop = EventLoop::new().unwrap();
-    let title = env!("CARGO_PKG_NAME");
-    let window = winit::window::WindowBuilder::new()
-        .with_title(title)
-        .build(&event_loop)
-        .unwrap();
+
+    let title = env!("CARGO_PKG_NAME").into();
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -242,57 +324,6 @@ pub async fn run() {
             .expect("Couldn't append canvas to document body.");
     }
 
-    let mut state = State::new(window).await.unwrap();
-    let mut last_render_time = instant::Instant::now();
-    event_loop.run(move |event, control_flow| {
-        match event {
-            Event::DeviceEvent {
-                event: DeviceEvent::MouseMotion{ delta, },
-                .. // We're not using device_id currently
-            } => if state.mouse_pressed {
-                state.camera_controller.process_mouse(delta.0, delta.1)
-            }
-            // UPDATED!
-            Event::WindowEvent {
-                ref event,
-                window_id,
-            } if window_id == state.window().id() && !state.input(event) => {
-                match event {
-                    #[cfg(not(target_arch="wasm32"))]
-                    WindowEvent::CloseRequested
-                    | WindowEvent::KeyboardInput {
-                        event:
-                            KeyEvent {
-                                state: ElementState::Pressed,
-                                physical_key: PhysicalKey::Code(KeyCode::Escape),
-                                ..
-                            },
-                        ..
-                    } => control_flow.exit(),
-                    WindowEvent::Resized(physical_size) => {
-                        state.resize(*physical_size);
-                    }
-                    // UPDATED!
-                    WindowEvent::RedrawRequested => {
-                        state.window().request_redraw();
-                        let now = instant::Instant::now();
-                        let dt = now - last_render_time;
-                        last_render_time = now;
-                        state.update(dt);
-                        match state.render() {
-                            Ok(_) => {}
-                            // Reconfigure the surface if it's lost or outdated
-                            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => state.resize(state.size),
-                            // The system is out of memory, we should probably quit
-                            Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
-                            // We're ignoring timeouts
-                            Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-    }).unwrap();
+    let mut window_state = StateApplication::new(title);
+    let _ = event_loop.run_app(&mut window_state);
 }

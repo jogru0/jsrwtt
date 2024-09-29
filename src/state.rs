@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, iter, sync::Arc};
+use std::{f32::consts::PI, iter, sync::Arc, time::Instant};
 
 use cgmath::Rotation3;
 use wgpu::util::DeviceExt;
@@ -45,6 +45,7 @@ pub(super) struct State {
     sky_pipeline: wgpu::RenderPipeline,
     #[cfg(feature = "debug")]
     debug: debug::Debug,
+    last_render_time: Instant,
 }
 
 impl State {
@@ -451,7 +452,7 @@ impl State {
             hdr,
             environment_bind_group,
             sky_pipeline,
-
+            last_render_time: Instant::now(),
             #[cfg(feature = "debug")]
             debug,
         })
@@ -503,7 +504,10 @@ impl State {
         }
     }
 
-    pub(super) fn update(&mut self, dt: std::time::Duration) {
+    pub(super) fn update(&mut self, now: Instant) {
+        let dt = now - self.last_render_time;
+        self.last_render_time = now;
+
         self.camera_controller.update_camera(&mut self.camera, dt);
         self.camera_uniform
             .update_view_proj(&self.camera, &self.projection);
