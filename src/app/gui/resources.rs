@@ -1,6 +1,5 @@
 use std::io::{BufReader, Cursor};
 
-use cfg_if::cfg_if;
 use image::codecs::hdr::HdrDecoder;
 use wgpu::util::DeviceExt;
 
@@ -10,40 +9,18 @@ use super::{
 };
 
 pub async fn load_string(file_name: &str) -> anyhow::Result<String> {
-    cfg_if! {
-        if #[cfg(target_arch = "wasm32")] {
-            let url = format_url(file_name);
-            let txt = reqwest::get(url)
-                .await?
-                .text()
-                .await?;
-        } else {
-            let path = std::path::Path::new(env!("OUT_DIR"))
-                .join("res")
-                .join(file_name);
-            let txt = std::fs::read_to_string(path)?;
-        }
-    }
-
+    let path = std::path::Path::new(env!("OUT_DIR"))
+        .join("res")
+        .join(file_name);
+    let txt = std::fs::read_to_string(path)?;
     Ok(txt)
 }
 
 pub async fn load_binary(file_name: &str) -> anyhow::Result<Vec<u8>> {
-    cfg_if! {
-        if #[cfg(target_arch = "wasm32")] {
-            let url = format_url(file_name);
-            let data = reqwest::get(url)
-                .await?
-                .bytes()
-                .await?
-                .to_vec();
-        } else {
-            let path = std::path::Path::new(env!("OUT_DIR"))
-                .join("res")
-                .join(file_name);
-            let data = std::fs::read(path)?;
-        }
-    }
+    let path = std::path::Path::new(env!("OUT_DIR"))
+        .join("res")
+        .join(file_name);
+    let data = std::fs::read(path)?;
 
     Ok(data)
 }
@@ -280,7 +257,6 @@ impl HdrLoader {
         let hdr_decoder = HdrDecoder::new(Cursor::new(data))?;
         let meta = hdr_decoder.metadata();
 
-        #[cfg(not(target_arch = "wasm32"))]
         let pixels = {
             let mut pixels = vec![[0.0, 0.0, 0.0, 0.0]; meta.width as usize * meta.height as usize];
             hdr_decoder.read_image_transform(
@@ -292,15 +268,6 @@ impl HdrLoader {
             )?;
             pixels
         };
-        #[cfg(target_arch = "wasm32")]
-        let pixels = hdr_decoder
-            .read_image_native()?
-            .into_iter()
-            .map(|pix| {
-                let rgb = pix.to_hdr();
-                [rgb.0[0], rgb.0[1], rgb.0[2], 1.0f32]
-            })
-            .collect::<Vec<_>>();
 
         let src = Texture::create_2d_texture(
             device,

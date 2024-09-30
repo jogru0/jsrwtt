@@ -1,4 +1,4 @@
-use std::convert::TryInto;
+use std::{convert::TryInto, time::Instant};
 
 use gui::{resolution::Resolution, Gui, GuiConfig, MaybeGui};
 use log::info;
@@ -90,7 +90,6 @@ impl ApplicationHandler for StateApplication {
         }
 
         match event {
-            #[cfg(not(target_arch = "wasm32"))]
             WindowEvent::CloseRequested
             | WindowEvent::KeyboardInput {
                 event:
@@ -107,7 +106,7 @@ impl ApplicationHandler for StateApplication {
             // UPDATED!
             WindowEvent::RedrawRequested => {
                 gui.window().request_redraw();
-                gui.update(instant::Instant::now());
+                gui.update(Instant::now());
                 match gui.render() {
                     Ok(_) => {}
                     // Reconfigure the surface if it's lost or outdated
