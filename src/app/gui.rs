@@ -46,15 +46,20 @@ pub(super) enum MaybeGui {
 }
 
 impl MaybeGui {
+    pub(super) fn surely_get(&mut self) -> &mut Gui {
+        let MaybeGui::Initialized(gui) = self else {
+            panic!("expected gui to be already initialized")
+        };
+        gui
+    }
+
     pub(super) async fn get_or_initialize(&mut self, event_loop: &ActiveEventLoop) -> &mut Gui {
         match self {
             MaybeGui::Unitialized(gui_config) => {
                 let gui = Gui::new(event_loop, gui_config).await.unwrap();
                 *self = MaybeGui::Initialized(gui);
-                let MaybeGui::Initialized(gui) = self else {
-                    unreachable!()
-                };
 
+                let gui = self.surely_get();
                 //TODO: No title on Linux?
                 info!("created gui for '{}'", gui.window().title());
                 gui

@@ -33,6 +33,10 @@ pub(super) struct AppConfig {
 }
 
 impl StateApplication {
+    fn surely_gui(&mut self) -> &mut Gui {
+        self.maybe_gui.surely_get()
+    }
+
     async fn gui(&mut self, event_loop: &ActiveEventLoop) -> &mut Gui {
         self.maybe_gui.get_or_initialize(event_loop).await
     }
@@ -55,15 +59,15 @@ impl ApplicationHandler for StateApplication {
 
     fn device_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        _event_loop: &ActiveEventLoop,
         _device_id: DeviceId,
         event: DeviceEvent,
     ) {
-        let state = self.gui(event_loop).block_on();
+        let gui = self.surely_gui();
 
         if let DeviceEvent::MouseMotion { delta } = event {
-            if state.mouse_pressed {
-                state.camera_controller.process_mouse(delta.0, delta.1)
+            if gui.mouse_pressed {
+                gui.camera_controller.process_mouse(delta.0, delta.1)
             }
         }
     }
@@ -74,9 +78,14 @@ impl ApplicationHandler for StateApplication {
         window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        let state = self.gui(event_loop).block_on();
+        let gui = self.surely_gui();
 
-        if window_id != state.window().id() || state.input(&event) {
+        if window_id != gui.window().id() {
+            panic!("We currently expect only one window")
+        }
+
+        // See if event gets consumed by the gui.
+        if gui.input(&event) {
             return;
         }
 
@@ -93,17 +102,18 @@ impl ApplicationHandler for StateApplication {
                 ..
             } => event_loop.exit(),
             WindowEvent::Resized(physical_size) => {
-                state.resize(physical_size.try_into().unwrap());
+                gui.resize(physical_size.try_into().unwrap());
             }
             // UPDATED!
             WindowEvent::RedrawRequested => {
-                state.window().request_redraw();
-                state.update(instant::Instant::now());
-                match state.render() {
+                gui.window().request_redraw();
+                gui.update(instant::Instant::now());
+                match gui.render() {
                     Ok(_) => {}
                     // Reconfigure the surface if it's lost or outdated
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => state
-                        .resize(Resolution::new(state.config.width, state.config.height).unwrap()),
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        gui.resize(Resolution::new(gui.config.width, gui.config.height).unwrap())
+                    }
                     // The system is out of memory, we should probably quit
                     Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
                     // We're ignoring timeouts

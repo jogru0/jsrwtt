@@ -14,7 +14,7 @@ anyhow = "1.0"
 bytemuck = { version = "1.16", features = ["derive"] }
 cgmath = "0.18"
 env_logger = "0.10"
-pollster = "0.3"
+pollster = { version = "0.3", features = ["macro"] }
 log = "0.4"
 tobj = { version = "3.2", default-features = false, features = ["async"] }
 wgpu = "22.1.0"
