@@ -1,7 +1,7 @@
 use std::{convert::TryInto, time::Instant};
 
 use gui::{resolution::Resolution, Gui, GuiConfig, MaybeGui};
-use log::info;
+use log::{error, info, warn};
 use pollster::FutureExt;
 use winit::{
     application::ApplicationHandler,
@@ -109,16 +109,21 @@ impl ApplicationHandler for StateApplication {
             }
 
             WindowEvent::RedrawRequested => {
+                //TODO: Explaination for this.
                 gui.window().request_redraw();
                 gui.update(Instant::now());
                 match gui.render() {
                     Ok(_) => {}
                     // Reconfigure the surface if it's lost or outdated
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        warn!("surface lost or outdated");
                         gui.resize(Resolution::new(gui.config.width, gui.config.height).unwrap())
                     }
                     // The system is out of memory, we should probably quit
-                    Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
+                    Err(wgpu::SurfaceError::OutOfMemory) => {
+                        error!("rendering failed due to out of memory");
+                        event_loop.exit()
+                    }
                     // We're ignoring timeouts
                     Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
                 }

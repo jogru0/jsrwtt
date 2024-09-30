@@ -228,7 +228,7 @@ where
         instances: Range<u32>,
         camera_bind_group: &'b wgpu::BindGroup,
         light_bind_group: &'b wgpu::BindGroup,
-        environment_bind_group: &'b wgpu::BindGroup, // NEW!
+        environment_bind_group: &'b wgpu::BindGroup,
     ) {
         for mesh in &model.meshes {
             let material = &model.materials[mesh.material];

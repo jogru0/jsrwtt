@@ -51,7 +51,7 @@ impl Texture {
             texture,
             view,
             sampler,
-            size, // NEW!
+            size,
         }
     }
 
@@ -177,7 +177,7 @@ impl Texture {
             texture,
             view,
             sampler,
-            size, // NEW!
+            size,
         }
     }
 }

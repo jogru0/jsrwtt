@@ -11,15 +11,15 @@ use cgmath::Rotation3;
 use hdr::HdrPipeline;
 use instance::{Instance, InstanceRaw};
 use light_uniform::LightUniform;
-use log::{info, warn};
+use log::{error, info, warn};
 use model::{DrawLight, DrawModel, Model, Vertex};
 use resolution::Resolution;
 use texture::Texture;
 #[cfg(feature = "debug")]
 use wgpu::TextureFormat;
 use wgpu::{
-    util::DeviceExt, BindGroup, BindGroupLayout, Buffer, Device, Queue, RenderPipeline, Surface,
-    SurfaceConfiguration,
+    util::DeviceExt, Adapter, Backends, BindGroup, BindGroupLayout, Buffer, CommandEncoder, Device,
+    DeviceType, Queue, RenderPipeline, Surface, SurfaceConfiguration,
 };
 use winit::{
     event::{ElementState, KeyEvent, MouseButton, WindowEvent},
@@ -122,10 +122,7 @@ fn create_winit_related_fields(
     (window, resolution)
 }
 
-async fn create_wgpu_related_fields(
-    window: Arc<Window>,
-    resolution: Resolution,
-) -> (Surface<'static>, Device, Queue, SurfaceConfiguration) {
+fn create_surface_and_select_best_adapter(window: Arc<Window>) -> (Surface<'static>, Adapter) {
     // The wgpu_instance is used to get an adapter and a surface.
     let wgpu_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
@@ -135,28 +132,76 @@ async fn create_wgpu_related_fields(
 
     let surface = wgpu_instance.create_surface(window).unwrap();
 
-    // Handle to our graphics card.
-    let adapter = wgpu_instance
-        .request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::default(),
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
+    let mut adaters = wgpu_instance.enumerate_adapters(Backends::all());
+    adaters.retain(|adapter| adapter.is_surface_supported(&surface));
+
+    if adaters.is_empty() {
+        error!("found no adapter compatible with the surface");
+        panic!()
+    }
+
+    let mut adapters_and_infos: Vec<_> = adaters
+        .into_iter()
+        .map(|adapter| {
+            let info = adapter.get_info();
+            (adapter, info)
         })
-        .await
-        .unwrap();
+        .collect();
+    adapters_and_infos.sort_by_key(|(_, info)| match info.device_type {
+        wgpu::DeviceType::Other => 4,
+        wgpu::DeviceType::IntegratedGpu => 1,
+        wgpu::DeviceType::DiscreteGpu => 0,
+        wgpu::DeviceType::VirtualGpu => 3,
+        wgpu::DeviceType::Cpu => 2,
+    });
 
-    let info = adapter.get_info();
-    info!("using bakckend '{}' for GPU '{}'", info.backend, info.name);
+    let mut number_of_adapters_for_discrete_gpus = 0;
+    for (_, info) in &adapters_and_infos {
+        if info.device_type != DeviceType::DiscreteGpu {
+            break;
+        }
+        number_of_adapters_for_discrete_gpus += 1;
+    }
 
+    if number_of_adapters_for_discrete_gpus > 1 {
+        warn!("found multiple adapters for discrete GPUs, will choose arbitrarily:");
+        for (i, (_, info)) in adapters_and_infos[..number_of_adapters_for_discrete_gpus]
+            .iter()
+            .enumerate()
+        {
+            warn!(
+                "\tPossibility {}: backend '{}' for GPU '{}'",
+                i + 1,
+                info.backend,
+                info.name
+            );
+        }
+    } else if number_of_adapters_for_discrete_gpus == 0 {
+        warn!(
+            "found no adapters for discrete GPUs, have to fall back to device type '{:?}'",
+            adapters_and_infos[0].1.device_type
+        );
+    }
+
+    // Handle to our graphics card.
+    let (adapter, info) = adapters_and_infos.swap_remove(0);
+    info!("using backend '{}' for GPU '{}'", info.backend, info.name);
+    (surface, adapter)
+}
+
+async fn create_wgpu_related_fields(
+    window: Arc<Window>,
+    resolution: Resolution,
+) -> (Surface<'static>, Device, Queue, SurfaceConfiguration) {
     let required_limits = wgpu::Limits::default();
+
+    let (surface, adapter) = create_surface_and_select_best_adapter(window);
 
     let (device, queue) = adapter
         .request_device(
             &wgpu::DeviceDescriptor {
                 label: None,
-                // UPDATED!
                 required_features: wgpu::Features::empty(),
-                // UPDATED!
                 required_limits,
                 memory_hints: Default::default(),
             },
@@ -466,7 +511,7 @@ fn create_render_pipelines(
                     texture_bind_group_layout,
                     camera_bind_group_layout,
                     light_bind_group_layout,
-                    environment_layout, // UPDATED!
+                    environment_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -598,7 +643,6 @@ impl Gui {
             light_bind_group,
             light_render_pipeline,
             mouse_pressed: false,
-            // NEW!
             hdr,
             environment_bind_group,
             sky_pipeline,
@@ -692,6 +736,57 @@ impl Gui {
         );
     }
 
+    fn do_render_pass(&self, encoder: &mut CommandEncoder) {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: self.hdr.view(),
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_texture.view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            occlusion_query_set: None,
+            timestamp_writes: None,
+        });
+
+        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        render_pass.set_pipeline(&self.light_render_pipeline);
+        render_pass.draw_light_model(
+            &self.obj_model,
+            &self.camera_bind_group,
+            &self.light_bind_group,
+        );
+
+        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.draw_model_instanced(
+            &self.obj_model,
+            0..self.instances.len() as u32,
+            &self.camera_bind_group,
+            &self.light_bind_group,
+            &self.environment_bind_group,
+        );
+
+        render_pass.set_pipeline(&self.sky_pipeline);
+        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        render_pass.set_bind_group(1, &self.environment_bind_group, &[]);
+        render_pass.draw(0..3, 0..1);
+    }
+
     pub(super) fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
@@ -705,58 +800,9 @@ impl Gui {
                 label: Some("Render Encoder"),
             });
 
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: self.hdr.view(), // UPDATED!
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                occlusion_query_set: None,
-                timestamp_writes: None,
-            });
+        // The main render pass, I think.
+        self.do_render_pass(&mut encoder);
 
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            render_pass.set_pipeline(&self.light_render_pipeline);
-            render_pass.draw_light_model(
-                &self.obj_model,
-                &self.camera_bind_group,
-                &self.light_bind_group,
-            );
-
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw_model_instanced(
-                &self.obj_model,
-                0..self.instances.len() as u32,
-                &self.camera_bind_group,
-                &self.light_bind_group,
-                &self.environment_bind_group,
-            );
-
-            render_pass.set_pipeline(&self.sky_pipeline);
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.environment_bind_group, &[]);
-            render_pass.draw(0..3, 0..1);
-        }
-
-        // NEW!
         // Apply tonemapping
         self.hdr.process(&mut encoder, &view);
 
@@ -819,7 +865,7 @@ fn create_render_pipeline(
             compilation_options: Default::default(),
         }),
         primitive: wgpu::PrimitiveState {
-            topology, // NEW!
+            topology,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
             cull_mode: Some(wgpu::Face::Back),

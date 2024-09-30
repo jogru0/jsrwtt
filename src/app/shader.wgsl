@@ -37,7 +37,6 @@ struct InstanceInput {
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
-    // Updated!
     @location(1) world_position: vec3<f32>,
     @location(2) world_view_position: vec3<f32>,
     @location(3) world_light_position: vec3<f32>,
@@ -63,7 +62,6 @@ fn vs_main(
         instance.normal_matrix_2,
     );
 
-    // UPDATED!
     let world_position = model_matrix * vec4<f32>(model.position, 1.0);
 
     var out: VertexOutput;
@@ -100,7 +98,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let object_color: vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords);
     let object_normal: vec4<f32> = textureSample(t_normal, s_normal, in.tex_coords);
 
-    // NEW!
     // Adjust the tangent and bitangent using the Gramm-Schmidt process
     // This makes sure that they are perpedicular to each other and the
     // normal of the surface.
@@ -127,7 +124,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let specular_strength = pow(max(dot(world_normal, half_dir), 0.0), 32.0);
     let specular_color = specular_strength * light.color;
 
-    // NEW!
     // Calculate reflections
     let world_reflect = reflect(-view_dir, world_normal);
     let reflection = textureSample(env_map, env_sampler, world_reflect).rgb;
