@@ -5,6 +5,8 @@ use winit::dpi::PhysicalPosition;
 use winit::event::*;
 use winit::keyboard::KeyCode;
 
+use super::resolution::Resolution;
+
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
 #[derive(Debug)]
@@ -90,8 +92,8 @@ impl Projection {
         }
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        self.aspect = width as f32 / height as f32;
+    pub fn resize(&mut self, resolution: Resolution) {
+        self.aspect = resolution.width() as f32 / resolution.height() as f32;
     }
 
     pub fn calc_matrix(&self) -> Matrix4<f32> {

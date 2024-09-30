@@ -1,6 +1,6 @@
 use wgpu::Operations;
 
-use super::{create_render_pipeline, texture::Texture};
+use super::{create_render_pipeline, resolution::Resolution, texture::Texture};
 
 /// Owns the render texture and controls tonemapping
 pub struct HdrPipeline {
@@ -98,11 +98,11 @@ impl HdrPipeline {
     }
 
     /// Resize the HDR texture
-    pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
+    pub fn resize(&mut self, device: &wgpu::Device, new_resolution: Resolution) {
         self.texture = Texture::create_2d_texture(
             device,
-            width,
-            height,
+            new_resolution.width(),
+            new_resolution.height(),
             wgpu::TextureFormat::Rgba16Float,
             wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
             wgpu::FilterMode::Nearest,
@@ -122,8 +122,8 @@ impl HdrPipeline {
                 },
             ],
         });
-        self.width = width;
-        self.height = height;
+        self.width = new_resolution.width();
+        self.height = new_resolution.height();
     }
 
     /// Exposes the HDR texture

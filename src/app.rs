@@ -1,9 +1,10 @@
-use gui::{Gui, GuiConfig, MaybeGui};
+use std::convert::TryInto;
+
+use gui::{resolution::Resolution, Gui, GuiConfig, MaybeGui};
 use log::info;
 use pollster::FutureExt;
 use winit::{
     application::ApplicationHandler,
-    dpi::PhysicalSize,
     event::{DeviceEvent, DeviceId, ElementState, KeyEvent, WindowEvent},
     event_loop::ActiveEventLoop,
     keyboard::{KeyCode, PhysicalKey},
@@ -13,18 +14,18 @@ use world::World;
 mod gui;
 mod world {
     pub(super) struct World {
-        size: u32,
+        _size: u32,
     }
     impl World {
         pub(super) fn new() -> Self {
-            Self { size: 7 }
+            Self { _size: 7 }
         }
     }
 }
 
 pub(super) struct StateApplication {
     maybe_gui: MaybeGui,
-    world: World,
+    _world: World,
 }
 
 pub(super) struct AppConfig {
@@ -41,7 +42,7 @@ impl StateApplication {
             maybe_gui: MaybeGui::Unitialized(GuiConfig {
                 title: app_config.title,
             }),
-            world: World::new(),
+            _world: World::new(),
         }
     }
 }
@@ -92,7 +93,7 @@ impl ApplicationHandler for StateApplication {
                 ..
             } => event_loop.exit(),
             WindowEvent::Resized(physical_size) => {
-                state.resize(physical_size);
+                state.resize(physical_size.try_into().unwrap());
             }
             // UPDATED!
             WindowEvent::RedrawRequested => {
@@ -101,9 +102,8 @@ impl ApplicationHandler for StateApplication {
                 match state.render() {
                     Ok(_) => {}
                     // Reconfigure the surface if it's lost or outdated
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        state.resize(PhysicalSize::new(state.config.width, state.config.height))
-                    }
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => state
+                        .resize(Resolution::new(state.config.width, state.config.height).unwrap()),
                     // The system is out of memory, we should probably quit
                     Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
                     // We're ignoring timeouts

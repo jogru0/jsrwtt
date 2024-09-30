@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, iter, sync::Arc, time::Instant};
+use std::{convert::TryInto, f32::consts::PI, iter, sync::Arc, time::Instant};
 
 use camera::CameraUniform;
 use cgmath::Rotation3;
@@ -7,6 +7,7 @@ use instance::{Instance, InstanceRaw};
 use light_uniform::LightUniform;
 use log::info;
 use model::{DrawLight, DrawModel, Model, Vertex};
+use resolution::Resolution;
 use texture::Texture;
 #[cfg(feature = "debug")]
 use wgpu::TextureFormat;
@@ -15,7 +16,6 @@ use wgpu::{
     SurfaceConfiguration,
 };
 use winit::{
-    dpi::PhysicalSize,
     event::{ElementState, KeyEvent, MouseButton, WindowEvent},
     event_loop::ActiveEventLoop,
     keyboard::PhysicalKey,
@@ -30,6 +30,8 @@ mod instance;
 mod model;
 mod resources;
 mod texture;
+
+pub(super) mod resolution;
 
 #[cfg(feature = "debug")]
 mod debug;
@@ -52,6 +54,8 @@ impl MaybeGui {
                 let MaybeGui::Initialized(gui) = self else {
                     unreachable!()
                 };
+
+                //TODO: No title on Linux?
                 info!("created gui for '{}'", gui.window().title());
                 gui
             }
@@ -96,23 +100,20 @@ pub(super) struct Gui {
 fn create_winit_related_fields(
     event_loop: &ActiveEventLoop,
     title: &str,
-) -> (Arc<Window>, PhysicalSize<u32>) {
+) -> (Arc<Window>, Resolution) {
     let window = Arc::new(
         event_loop
             .create_window(Window::default_attributes().with_title(title))
             .unwrap(),
     );
-    let size = window.inner_size();
-    info!(
-        "created window with title '{title}' and size {}x{}",
-        size.width, size.height
-    );
-    (window, size)
+    let resolution = window.inner_size().try_into().unwrap();
+    info!("created window with title '{title}' and resolution {resolution}",);
+    (window, resolution)
 }
 
 async fn create_wgpu_related_fields(
     window: Arc<Window>,
-    size: PhysicalSize<u32>,
+    resolution: Resolution,
 ) -> (Surface<'static>, Device, Queue, SurfaceConfiguration) {
     // The wgpu_instance is used to get an adapter and a surface.
     let wgpu_instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -166,14 +167,16 @@ async fn create_wgpu_related_fields(
     let config = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format: surface_format,
-        width: size.width,
-        height: size.height,
+        width: resolution.width(),
+        height: resolution.height(),
         present_mode: surface_caps.present_modes[0],
         alpha_mode: surface_caps.alpha_modes[0],
-        // NEW!
         view_formats: vec![surface_format.add_srgb_suffix()],
         desired_maximum_frame_latency: 2,
     };
+
+    info!("initial configuration for {}", resolution);
+    surface.configure(&device, &config);
 
     (surface, device, queue, config)
 }
@@ -521,10 +524,10 @@ impl Gui {
     ) -> anyhow::Result<Self> {
         info!("creating gui for '{}'", gui_config.title);
 
-        let (window, size) = create_winit_related_fields(event_loop, &gui_config.title);
+        let (window, resolution) = create_winit_related_fields(event_loop, &gui_config.title);
 
         let (surface, device, queue, config) =
-            create_wgpu_related_fields(window.clone(), size).await;
+            create_wgpu_related_fields(window.clone(), resolution).await;
 
         let texture_bind_group_layout = create_texture_bind_group_layout(&device);
 
@@ -598,19 +601,23 @@ impl Gui {
         &self.window_arc
     }
 
-    pub(super) fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        info!("resizing to {}x{}", new_size.width, new_size.height);
-
-        if new_size.width > 0 && new_size.height > 0 {
-            self.projection.resize(new_size.width, new_size.height);
-            self.hdr
-                .resize(&self.device, new_size.width, new_size.height);
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
-            self.surface.configure(&self.device, &self.config);
-            self.depth_texture =
-                texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
+    pub(super) fn resize(&mut self, new_resolution: Resolution) {
+        if new_resolution.width() == self.config.width
+            && new_resolution.height() == self.config.height
+        {
+            info!("skipping resizing to the same size ({})", new_resolution);
+            return;
         }
+
+        info!("resizing to {}", new_resolution);
+
+        self.projection.resize(new_resolution);
+        self.hdr.resize(&self.device, new_resolution);
+        self.config.width = new_resolution.width();
+        self.config.height = new_resolution.height();
+        self.surface.configure(&self.device, &self.config);
+        self.depth_texture =
+            texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
     }
 
     pub(super) fn input(&mut self, event: &WindowEvent) -> bool {
