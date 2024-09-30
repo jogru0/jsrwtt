@@ -99,11 +99,15 @@ impl ApplicationHandler for StateApplication {
                         ..
                     },
                 ..
-            } => event_loop.exit(),
+            } => {
+                info!("close requested");
+                event_loop.exit()
+            }
+
             WindowEvent::Resized(physical_size) => {
                 gui.resize(physical_size.try_into().unwrap());
             }
-            // UPDATED!
+
             WindowEvent::RedrawRequested => {
                 gui.window().request_redraw();
                 gui.update(Instant::now());
@@ -119,7 +123,10 @@ impl ApplicationHandler for StateApplication {
                     Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
                 }
             }
-            _ => {}
+
+            _ => {
+                // info!("ignored event {event:?}")
+            }
         }
     }
 }

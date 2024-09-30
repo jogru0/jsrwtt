@@ -1,11 +1,17 @@
-use std::{convert::TryInto, f32::consts::PI, iter, sync::Arc, time::Instant};
+use std::{
+    convert::TryInto,
+    f32::consts::PI,
+    iter,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use camera::CameraUniform;
 use cgmath::Rotation3;
 use hdr::HdrPipeline;
 use instance::{Instance, InstanceRaw};
 use light_uniform::LightUniform;
-use log::info;
+use log::{info, warn};
 use model::{DrawLight, DrawModel, Model, Vertex};
 use resolution::Resolution;
 use texture::Texture;
@@ -654,6 +660,13 @@ impl Gui {
 
     pub(super) fn update(&mut self, now: Instant) {
         let dt = now - self.last_render_time;
+
+        const MINIMUM_EXPECTED_FPS: u32 = 30;
+
+        if Duration::from_secs(1) / MINIMUM_EXPECTED_FPS < dt {
+            warn!("updating gui after {dt:?}");
+        }
+
         self.last_render_time = now;
 
         self.camera_controller.update_camera(&mut self.camera, dt);
