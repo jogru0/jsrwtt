@@ -516,10 +516,7 @@ fn create_render_pipelines(
                 push_constant_ranges: &[],
             });
 
-        let shader = wgpu::ShaderModuleDescriptor {
-            label: Some("Normal Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-        };
+        let shader = wgpu::include_wgsl!("shader.wgsl");
         create_render_pipeline(
             device,
             &render_pipeline_layout,
@@ -537,10 +534,7 @@ fn create_render_pipelines(
             bind_group_layouts: &[camera_bind_group_layout, light_bind_group_layout],
             push_constant_ranges: &[],
         });
-        let shader = wgpu::ShaderModuleDescriptor {
-            label: Some("Light Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("light.wgsl").into()),
-        };
+        let shader = wgpu::include_wgsl!("light.wgsl");
         create_render_pipeline(
             device,
             &layout,
@@ -843,53 +837,64 @@ fn create_render_pipeline(
 ) -> wgpu::RenderPipeline {
     info!("create render pipeline '{:?}'", shader.label);
 
-    let shader = device.create_shader_module(shader);
+    let module = device.create_shader_module(shader);
+
+    //How to move vertices on the surface.
+    let vertex_state = wgpu::VertexState {
+        module: &module,
+        entry_point: "vs_main",
+        buffers: vertex_layouts,
+        compilation_options: Default::default(),
+    };
+
+    //How to store color data to the surface.
+    let fragment_state = wgpu::FragmentState {
+        module: &module,
+        entry_point: "fs_main",
+        targets: &[Some(wgpu::ColorTargetState {
+            format: color_format,
+            blend: None,
+            write_mask: wgpu::ColorWrites::ALL,
+        })],
+        compilation_options: Default::default(),
+    };
+
+    //How to interpret vertices as corners of triangles.
+    let primitive_state = wgpu::PrimitiveState {
+        topology,
+        strip_index_format: None,
+        front_face: wgpu::FrontFace::Ccw,
+        cull_mode: Some(wgpu::Face::Back),
+        // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+        polygon_mode: wgpu::PolygonMode::Fill,
+        // Requires Features::DEPTH_CLIP_CONTROL
+        unclipped_depth: false,
+        // Requires Features::CONSERVATIVE_RASTERIZATION
+        conservative: false,
+    };
+
+    let maybe_depth_stencil_state = depth_format.map(|format| wgpu::DepthStencilState {
+        format,
+        depth_write_enabled: true,
+        depth_compare: wgpu::CompareFunction::LessEqual, // UDPATED!
+        stencil: wgpu::StencilState::default(),
+        bias: wgpu::DepthBiasState::default(),
+    });
+
+    let multisample_state = wgpu::MultisampleState {
+        count: 1,
+        mask: !0,
+        alpha_to_coverage_enabled: false,
+    };
 
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some(&format!("{:?}", shader)),
+        label: Some(&format!("{:?}", module)),
         layout: Some(layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: "vs_main",
-            buffers: vertex_layouts,
-            compilation_options: Default::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: "fs_main",
-            targets: &[Some(wgpu::ColorTargetState {
-                format: color_format,
-                blend: None,
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: Default::default(),
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology,
-            strip_index_format: None,
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode: Some(wgpu::Face::Back),
-            // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-            polygon_mode: wgpu::PolygonMode::Fill,
-            // Requires Features::DEPTH_CLIP_CONTROL
-            unclipped_depth: false,
-            // Requires Features::CONSERVATIVE_RASTERIZATION
-            conservative: false,
-        },
-        depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
-            format,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::LessEqual, // UDPATED!
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        }),
-        multisample: wgpu::MultisampleState {
-            count: 1,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
-        // If the pipeline will be used with a multiview render pass, this
-        // indicates how many array layers the attachments will have.
+        vertex: vertex_state,
+        fragment: Some(fragment_state),
+        primitive: primitive_state,
+        depth_stencil: maybe_depth_stencil_state,
+        multisample: multisample_state,
         multiview: None,
         cache: None,
     })
