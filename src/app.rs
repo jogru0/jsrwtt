@@ -105,7 +105,11 @@ impl ApplicationHandler for StateApplication {
             }
 
             WindowEvent::Resized(physical_size) => {
-                gui.resize(physical_size.try_into().unwrap());
+                gui.resize(physical_size.try_into().unwrap_or_else(|_| {
+                    let fallback = Resolution::new(1, 1).unwrap();
+                    warn!("tried to resize to length or width zero, falling back to {fallback}");
+                    fallback
+                }));
             }
 
             WindowEvent::RedrawRequested => {
