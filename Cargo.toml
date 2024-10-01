@@ -22,7 +22,6 @@ winit = { version = "0.30.5", features = ["rwh_05"] }
 
 [dependencies.image]
 version = "0.24"
-default-features = false
 features = ["png", "jpeg", "hdr"]
 
 
