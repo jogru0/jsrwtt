@@ -1,11 +1,3 @@
-use std::{
-    convert::TryInto,
-    f32::consts::PI,
-    iter,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
 use camera::CameraUniform;
 use cgmath::Rotation3;
 use hdr::HdrPipeline;
@@ -14,6 +6,13 @@ use light_uniform::LightUniform;
 use log::{error, info, warn};
 use model::{DrawLight, DrawModel, Model, MODEL_VERTEX_LAYOUT};
 use resolution::Resolution;
+use std::{
+    convert::TryInto,
+    f32::consts::PI,
+    iter,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use texture::Texture;
 #[cfg(feature = "debug")]
 use wgpu::TextureFormat;
@@ -757,7 +756,6 @@ impl Gui {
             timestamp_writes: None,
         });
 
-        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         render_pass.set_pipeline(&self.light_render_pipeline);
         render_pass.draw_light_model(
             &self.obj_model,
@@ -766,6 +764,7 @@ impl Gui {
         );
 
         render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         render_pass.draw_model_instanced(
             &self.obj_model,
             0..self.instances.len() as u32,

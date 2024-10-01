@@ -117,6 +117,7 @@ pub trait DrawModel<'a> {
         light_bind_group: &'a wgpu::BindGroup,
         environment_bind_group: &'a wgpu::BindGroup,
     );
+
     fn draw_model_instanced(
         &mut self,
         model: &'a Model,
@@ -125,6 +126,7 @@ pub trait DrawModel<'a> {
         light_bind_group: &'a wgpu::BindGroup,
         environment_bind_group: &'a wgpu::BindGroup,
     );
+
     #[expect(unused)]
     fn draw_model_instanced_with_material(
         &mut self,
@@ -302,6 +304,7 @@ where
     ) {
         self.draw_light_model_instanced(model, 0..1, camera_bind_group, light_bind_group);
     }
+
     fn draw_light_model_instanced(
         &mut self,
         model: &'b Model,
