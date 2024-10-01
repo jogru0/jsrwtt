@@ -1,10 +1,6 @@
-use std::ops::Range;
+use std::{mem, ops::Range};
 
 use super::texture;
-
-pub trait Vertex {
-    fn desc() -> wgpu::VertexBufferLayout<'static>;
-}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -16,43 +12,17 @@ pub struct ModelVertex {
     pub bitangent: [f32; 3],
 }
 
-impl Vertex for ModelVertex {
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        use std::mem;
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<ModelVertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 5]>() as wgpu::BufferAddress,
-                    shader_location: 2,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                // Tangent and bitangent
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
-                    shader_location: 3,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 11]>() as wgpu::BufferAddress,
-                    shader_location: 4,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-            ],
-        }
-    }
-}
+pub const MODEL_VERTEX_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+    array_stride: mem::size_of::<ModelVertex>() as _,
+    step_mode: wgpu::VertexStepMode::Vertex,
+    attributes: &wgpu::vertex_attr_array![
+        0 => Float32x3,
+        1 => Float32x2,
+        2 => Float32x3,
+        3 => Float32x3,
+        4 => Float32x3,
+    ],
+};
 
 pub struct Material {
     #[allow(unused)]
@@ -119,7 +89,7 @@ pub struct Model {
 }
 
 pub trait DrawModel<'a> {
-    #[allow(unused)]
+    #[expect(unused)]
     fn draw_mesh(
         &mut self,
         mesh: &'a Mesh,
@@ -128,6 +98,7 @@ pub trait DrawModel<'a> {
         light_bind_group: &'a wgpu::BindGroup,
         environment_bind_group: &'a wgpu::BindGroup,
     );
+
     fn draw_mesh_instanced(
         &mut self,
         mesh: &'a Mesh,
@@ -138,7 +109,7 @@ pub trait DrawModel<'a> {
         environment_bind_group: &'a wgpu::BindGroup,
     );
 
-    #[allow(unused)]
+    #[expect(unused)]
     fn draw_model(
         &mut self,
         model: &'a Model,
@@ -154,7 +125,7 @@ pub trait DrawModel<'a> {
         light_bind_group: &'a wgpu::BindGroup,
         environment_bind_group: &'a wgpu::BindGroup,
     );
-    #[allow(unused)]
+    #[expect(unused)]
     fn draw_model_instanced_with_material(
         &mut self,
         model: &'a Model,

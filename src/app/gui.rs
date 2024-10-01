@@ -9,10 +9,10 @@ use std::{
 use camera::CameraUniform;
 use cgmath::Rotation3;
 use hdr::HdrPipeline;
-use instance::{Instance, InstanceRaw};
+use instance::{Instance, INSTANCE_RAW_LAYOUT};
 use light_uniform::LightUniform;
 use log::{error, info, warn};
-use model::{DrawLight, DrawModel, Model, Vertex};
+use model::{DrawLight, DrawModel, Model, MODEL_VERTEX_LAYOUT};
 use resolution::Resolution;
 use texture::Texture;
 #[cfg(feature = "debug")]
@@ -92,7 +92,6 @@ pub(super) struct Gui {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     instances: Vec<Instance>,
-    #[allow(dead_code)]
     instance_buffer: wgpu::Buffer,
     depth_texture: texture::Texture,
     light_uniform: LightUniform,
@@ -522,7 +521,7 @@ fn create_render_pipelines(
             &render_pipeline_layout,
             hdr.format(),
             Some(texture::Texture::DEPTH_FORMAT),
-            &[model::ModelVertex::desc(), InstanceRaw::desc()],
+            &[MODEL_VERTEX_LAYOUT, INSTANCE_RAW_LAYOUT],
             wgpu::PrimitiveTopology::TriangleList,
             shader,
         )
@@ -540,7 +539,7 @@ fn create_render_pipelines(
             &layout,
             hdr.format(),
             Some(texture::Texture::DEPTH_FORMAT),
-            &[model::ModelVertex::desc()],
+            &[MODEL_VERTEX_LAYOUT],
             wgpu::PrimitiveTopology::TriangleList,
             shader,
         )
