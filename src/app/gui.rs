@@ -23,7 +23,7 @@ use wgpu::{
 use winit::{
     event::{ElementState, KeyEvent, MouseButton, WindowEvent},
     event_loop::ActiveEventLoop,
-    keyboard::PhysicalKey,
+    keyboard::{KeyCode, PhysicalKey},
     window::Window,
 };
 
@@ -648,6 +648,35 @@ impl Gui {
         &self.window_arc
     }
 
+    fn spawn_random_entity(&mut self) {
+        info!("spawning");
+
+        let var = self.instances.len() as f32;
+        let position = cgmath::Vector3 {
+            x: 0.0,
+            y: var - 99.0,
+            z: 0.0,
+        };
+
+        let rotation =
+            cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(10.0 * var));
+
+        self.instances.push(Instance { position, rotation });
+
+        let instance_data = self
+            .instances
+            .iter()
+            .map(Instance::to_raw)
+            .collect::<Vec<_>>();
+        self.instance_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer"),
+                contents: bytemuck::cast_slice(&instance_data),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+    }
+
     pub(super) fn resize(&mut self, new_resolution: Resolution) {
         if new_resolution.width() == self.config.width
             && new_resolution.height() == self.config.height
@@ -669,6 +698,18 @@ impl Gui {
 
     pub(super) fn input(&mut self, event: &WindowEvent) -> bool {
         match event {
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::Enter),
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } => {
+                self.spawn_random_entity();
+                true
+            }
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -763,11 +804,13 @@ impl Gui {
             &self.light_bind_group,
         );
 
+        let num_instances = self.instances.len() as u32;
+
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         render_pass.draw_model_instanced(
             &self.obj_model,
-            0..self.instances.len() as u32,
+            num_instances - 10..num_instances,
             &self.camera_bind_group,
             &self.light_bind_group,
             &self.environment_bind_group,
