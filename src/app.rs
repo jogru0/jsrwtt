@@ -12,16 +12,7 @@ use winit::{
 use world::World;
 
 mod gui;
-mod world {
-    pub(super) struct World {
-        _size: u32,
-    }
-    impl World {
-        pub(super) fn new() -> Self {
-            Self { _size: 7 }
-        }
-    }
-}
+mod world;
 
 pub(super) struct StateApplication {
     maybe_gui: MaybeGui,
