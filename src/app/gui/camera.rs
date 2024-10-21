@@ -52,25 +52,18 @@ pub(super) struct CameraUniform {
 }
 
 impl CameraUniform {
-    pub(super) fn new() -> Self {
-        Self {
-            view_position: [0.0; 4],
-            view: cgmath::Matrix4::identity().into(),
-            view_proj: cgmath::Matrix4::identity().into(),
-            inv_proj: cgmath::Matrix4::identity().into(),
-            inv_view: cgmath::Matrix4::identity().into(),
-        }
-    }
-
-    pub(super) fn update_view_proj(&mut self, camera: &Camera, projection: &Projection) {
-        self.view_position = camera.position.to_homogeneous().into();
+    pub(super) fn new(camera: &Camera, projection: &Projection) -> Self {
         let proj = projection.calc_matrix();
         let view = camera.calc_matrix();
         let view_proj = proj * view;
-        self.view = view.into();
-        self.view_proj = view_proj.into();
-        self.inv_proj = proj.invert().unwrap().into();
-        self.inv_view = view.transpose().into();
+
+        Self {
+            view_position: camera.position.to_homogeneous().into(),
+            view: view.into(),
+            view_proj: view_proj.into(),
+            inv_proj: proj.invert().unwrap().into(),
+            inv_view: view.transpose().into(),
+        }
     }
 }
 

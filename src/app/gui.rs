@@ -16,8 +16,8 @@ use std::{
 #[cfg(feature = "debug")]
 use wgpu::TextureFormat;
 use wgpu::{
-    util::DeviceExt, Adapter, Backends, BindGroup, BindGroupLayout, Buffer, CommandEncoder, Device,
-    DeviceType, Queue, RenderPipeline, Surface, SurfaceConfiguration,
+    util::DeviceExt, Adapter, Backends, BindGroup, BindGroupLayout, Buffer, BufferDescriptor,
+    CommandEncoder, Device, DeviceType, Queue, RenderPipeline, Surface, SurfaceConfiguration,
 };
 use winit::{
     event::{ElementState, KeyEvent, MouseButton, WindowEvent},
@@ -80,13 +80,12 @@ pub(super) struct Gui {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    pub(super) config: wgpu::SurfaceConfiguration,
+    pub(super) surface_config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
     obj_model: model::Model,
     camera: camera::Camera,
     projection: camera::Projection,
     pub(super) camera_controller: camera::CameraController,
-    camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     instances: Vec<Instance>,
@@ -217,7 +216,7 @@ async fn create_wgpu_related_fields(
         .copied()
         .find(|f| f.is_srgb())
         .unwrap();
-    let config = wgpu::SurfaceConfiguration {
+    let surface_config = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format: surface_format,
         width: resolution.width(),
@@ -229,9 +228,9 @@ async fn create_wgpu_related_fields(
     };
 
     info!("initial configuration for {}", resolution);
-    surface.configure(&device, &config);
+    surface.configure(&device, &surface_config);
 
-    (surface, device, queue, config)
+    (surface, device, queue, surface_config)
 }
 
 fn create_texture_bind_group_layout(device: &Device) -> BindGroupLayout {
@@ -284,7 +283,6 @@ fn create_camera_stuff(
     camera::CameraController,
     wgpu::Buffer,
     wgpu::BindGroup,
-    camera::CameraUniform,
     wgpu::BindGroupLayout,
 ) {
     let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
@@ -292,13 +290,11 @@ fn create_camera_stuff(
         camera::Projection::new(config.width, config.height, cgmath::Deg(45.0), 0.1, 100.0);
     let camera_controller = camera::CameraController::new(4.0, 0.4);
 
-    let mut camera_uniform = CameraUniform::new();
-    camera_uniform.update_view_proj(&camera, &projection);
-
-    let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Camera Buffer"),
-        contents: bytemuck::cast_slice(&[camera_uniform]),
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        size: size_of::<CameraUniform>() as u64,
+        mapped_at_creation: false,
     });
 
     let camera_bind_group_layout =
@@ -331,7 +327,6 @@ fn create_camera_stuff(
         camera_controller,
         camera_buffer,
         camera_bind_group,
-        camera_uniform,
         camera_bind_group_layout,
     )
 }
@@ -384,10 +379,11 @@ fn create_light_stuff(device: &Device) -> (LightUniform, Buffer, BindGroup, Bind
         _padding2: 0,
     };
 
-    let light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    let light_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("Light VB"),
-        contents: bytemuck::cast_slice(&[light_uniform]),
+        size: size_of::<LightUniform>() as u64,
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
     });
 
     let light_bind_group_layout =
@@ -569,7 +565,7 @@ impl Gui {
 
         let (window, resolution) = create_winit_related_fields(event_loop, &gui_config.title);
 
-        let (surface, device, queue, config) =
+        let (surface, device, queue, surface_config) =
             create_wgpu_related_fields(window.clone(), resolution).await;
 
         let texture_bind_group_layout = create_texture_bind_group_layout(&device);
@@ -580,9 +576,8 @@ impl Gui {
             camera_controller,
             camera_buffer,
             camera_bind_group,
-            camera_uniform,
             camera_bind_group_layout,
-        ) = create_camera_stuff(&config, &device);
+        ) = create_camera_stuff(&surface_config, &device);
 
         let (instances, instance_buffer) = create_instance_stuff(&device);
 
@@ -591,10 +586,12 @@ impl Gui {
         let (light_uniform, light_buffer, light_bind_group, light_bind_group_layout) =
             create_light_stuff(&device);
 
-        let depth_texture = texture::Texture::create_depth_texture(&device, &config);
+        let depth_texture = texture::Texture::create_depth_texture(&device, &surface_config);
 
         let (hdr, environment_layout, environment_bind_group) =
-            create_hdr_stuff(&device, &config, &queue).await.unwrap();
+            create_hdr_stuff(&device, &surface_config, &queue)
+                .await
+                .unwrap();
 
         let (render_pipeline, light_render_pipeline, sky_pipeline) = create_render_pipelines(
             &device,
@@ -613,7 +610,7 @@ impl Gui {
             surface,
             device,
             queue,
-            config,
+            surface_config,
             render_pipeline,
             obj_model,
             camera,
@@ -621,7 +618,6 @@ impl Gui {
             camera_controller,
             camera_buffer,
             camera_bind_group,
-            camera_uniform,
             instances,
             instance_buffer,
             depth_texture,
@@ -673,8 +669,8 @@ impl Gui {
     }
 
     pub(super) fn resize(&mut self, new_resolution: Resolution) {
-        if new_resolution.width() == self.config.width
-            && new_resolution.height() == self.config.height
+        if new_resolution.width() == self.surface_config.width
+            && new_resolution.height() == self.surface_config.height
         {
             info!("skipping resizing to the same size ({})", new_resolution);
             return;
@@ -684,10 +680,11 @@ impl Gui {
 
         self.projection.resize(new_resolution);
         self.hdr.resize(&self.device, new_resolution);
-        self.config.width = new_resolution.width();
-        self.config.height = new_resolution.height();
-        self.surface.configure(&self.device, &self.config);
-        self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config);
+        self.surface_config.width = new_resolution.width();
+        self.surface_config.height = new_resolution.height();
+        self.surface.configure(&self.device, &self.surface_config);
+        self.depth_texture =
+            texture::Texture::create_depth_texture(&self.device, &self.surface_config);
     }
 
     pub(super) fn input(&mut self, event: &WindowEvent) -> bool {
@@ -742,12 +739,11 @@ impl Gui {
 
         // Update the camera.
         self.camera_controller.update_camera(&mut self.camera, dt);
-        self.camera_uniform
-            .update_view_proj(&self.camera, &self.projection);
+        let camera_uniform = CameraUniform::new(&self.camera, &self.projection);
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
-            bytemuck::cast_slice(&[self.camera_uniform]),
+            bytemuck::cast_slice(&[camera_uniform]),
         );
 
         // Update the light
@@ -820,7 +816,7 @@ impl Gui {
     pub(super) fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
-            format: Some(self.config.format.add_srgb_suffix()),
+            format: Some(self.surface_config.format.add_srgb_suffix()),
             ..Default::default()
         });
 

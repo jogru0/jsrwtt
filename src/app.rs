@@ -112,7 +112,10 @@ impl ApplicationHandler for StateApplication {
                     // Reconfigure the surface if it's lost or outdated
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                         warn!("surface lost or outdated");
-                        gui.resize(Resolution::new(gui.config.width, gui.config.height).unwrap())
+                        gui.resize(
+                            Resolution::new(gui.surface_config.width, gui.surface_config.height)
+                                .unwrap(),
+                        )
                     }
                     // The system is out of memory, we should probably quit
                     Err(wgpu::SurfaceError::OutOfMemory) => {
