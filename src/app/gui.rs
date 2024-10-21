@@ -13,7 +13,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use texture::Texture;
 #[cfg(feature = "debug")]
 use wgpu::TextureFormat;
 use wgpu::{
@@ -423,10 +422,6 @@ fn create_light_stuff(device: &Device) -> (LightUniform, Buffer, BindGroup, Bind
     )
 }
 
-fn create_depth_texture(device: &Device, config: &SurfaceConfiguration) -> Texture {
-    texture::Texture::create_depth_texture(device, config, "depth_texture")
-}
-
 async fn create_hdr_stuff(
     device: &Device,
     config: &SurfaceConfiguration,
@@ -596,7 +591,7 @@ impl Gui {
         let (light_uniform, light_buffer, light_bind_group, light_bind_group_layout) =
             create_light_stuff(&device);
 
-        let depth_texture = create_depth_texture(&device, &config);
+        let depth_texture = texture::Texture::create_depth_texture(&device, &config);
 
         let (hdr, environment_layout, environment_bind_group) =
             create_hdr_stuff(&device, &config, &queue).await.unwrap();
@@ -692,8 +687,7 @@ impl Gui {
         self.config.width = new_resolution.width();
         self.config.height = new_resolution.height();
         self.surface.configure(&self.device, &self.config);
-        self.depth_texture =
-            texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
+        self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config);
     }
 
     pub(super) fn input(&mut self, event: &WindowEvent) -> bool {
@@ -746,6 +740,7 @@ impl Gui {
 
         self.last_render_time = now;
 
+        // Update the camera.
         self.camera_controller.update_camera(&mut self.camera, dt);
         self.camera_uniform
             .update_view_proj(&self.camera, &self.projection);
@@ -769,9 +764,9 @@ impl Gui {
         );
     }
 
-    fn do_render_pass(&self, encoder: &mut CommandEncoder) {
+    fn do_main_render_pass(&self, encoder: &mut CommandEncoder) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
+            label: Some("Main Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: self.hdr.view(),
                 resolve_target: None,
@@ -836,7 +831,7 @@ impl Gui {
             });
 
         // The main render pass, I think.
-        self.do_render_pass(&mut encoder);
+        self.do_main_render_pass(&mut encoder);
 
         // Apply tonemapping
         self.hdr.process(&mut encoder, &view);
@@ -917,7 +912,7 @@ fn create_render_pipeline(
     let maybe_depth_stencil_state = depth_format.map(|format| wgpu::DepthStencilState {
         format,
         depth_write_enabled: true,
-        depth_compare: wgpu::CompareFunction::LessEqual, // UDPATED!
+        depth_compare: wgpu::CompareFunction::LessEqual,
         stencil: wgpu::StencilState::default(),
         bias: wgpu::DepthBiasState::default(),
     });
